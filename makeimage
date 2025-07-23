@@ -1,0 +1,79 @@
+#!/usr/bin/env python3 
+import os
+import re
+import subprocess  
+
+#
+#
+# *********** Optimized for my system.  **************** 
+# 
+#
+
+if os.environ['USER'] != 'rpease': 
+   print("Meant only as a guide. Please do not run unless you are me. :)")
+   exit(1) 
+
+
+# Make 10 MB img file full of zeros 
+def make_blank_image_with_partitions(diskname): 
+  os.system("dd if=/dev/zero of="+diskname+" count="+str(30*1024*2))
+  os.system("sgdisk "+diskname+" -n 1:2048:32768 -n 2:0:+1MB -n 3:0:+9MB")
+
+
+#
+#
+#
+#
+def get_partitions(diskname): 
+  result = []   
+  partitions = subprocess.check_output(["sgdisk","-p",diskname]).decode().split('\n')
+  found_name = False
+  for line in partitions:
+    if found_name:
+        print(line)
+        line = re.sub(" *$","",re.sub("^ *","",line)) 
+        line = re.sub(" +"," ",line) 
+        if len(line) > 10: 
+            result.append([int(re.sub(' +',' ',x)) for x in line.split(' ')[0:3]])
+    if re.match("^Number",line):
+      found_name = True
+  if not found_name:
+     raise(Exception("Could not find Number line in sgdisk output"))
+  return result 
+
+def cleandisks():
+    if os.path.exists("/tmp/grubdisk_p1"):
+        os.system("sudo umount /tmp/grubdisk_p1; rm -rf /tmp/grubdisk_p1") 
+    if os.path.exists("/tmp/grubdisk_p2"):
+        os.system("sudo umount /tmp/grubdisk_p2; rm -rf /tmp/grubdisk_p2") 
+    if os.path.exists("/tmp/grubdisk_p3"):
+        os.system("sudo umount /tmp/grubdisk_p3; rm -rf /tmp/grubdisk_p3") 
+    os.system("sudo losetup -d /dev/loop40") 
+    os.system("sudo losetup -d /dev/loop41") 
+    os.system("sudo losetup -d /dev/loop42") 
+     
+def setupdisks(partitions,imgfile):    
+    os.system("mkdir /tmp/grubdisk_p1") 
+    os.system("mkdir /tmp/grubdisk_p2") 
+    os.system("mkdir /tmp/grubdisk_p3") 
+    startloop = 40
+    for i,v in enumerate(partitions): 
+       print("sudo losetup --offset "+str((v[1])*512)+                \
+                        " --sizelimit " + str((v[2]-v[1])*512) + \
+                        " /dev/loop"+str(i+startloop) + ' ' +imgfile \
+                         )
+       
+       print("sudo mkfs.vfat /dev/loop"+str(i+startloop)) 
+       print("sudo mount /dev/loop"+str(i+startloop)+
+             " /tmp/grubdisk_p"+str(i+1)) 
+
+
+if __name__ == "__main__": 
+    imgfile = "my10mbdisk.img"
+    make_blank_image_with_partitions(imgfile)
+    partitions = get_partitions(imgfile) 
+    # [['1', '2048', '32768', '15.0', 'MiB', '8300'], ['2', '34816', '36863', '1024.0', 'KiB', '8300'], ['3', '36864', '55295', '9.0', 'MiB', '8300']]
+
+    cleandisks()
+    setupdisks(partitions,imgfile) 
+
