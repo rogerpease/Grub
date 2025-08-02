@@ -1,0 +1,1 @@
+qemu-system-x86_64 -m 1024 x8664disk.img  -bios /usr/share/ovmf/OVMF.fd
