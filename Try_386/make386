@@ -1,0 +1,29 @@
+dd if=/dev/zero of=make386disk.img bs=1M count=512 # Creates a 512MB image file
+
+
+
+#sudo sgdisk -og make386disk.img # Creates a new GPT partition table
+sudo sgdisk -n 1:2048:+1M   -t 1:ef02 make386disk.img 
+sudo sgdisk -n 2:0:+50M     -t 2:ef00 make386disk.img     
+sudo sgdisk -n 3:0:0        -t 3:8300 make386disk.img  
+
+losetup -P /dev/loop30 make386disk.img
+
+mkdosfs /dev/loop30p2 
+mkdosfs /dev/loop30p3
+
+mkdir -p /grubimg/grub /grubimg/linux 
+mount /dev/loop30p2 /mnt/efi
+mount /dev/loop30p3 /mnt/drive
+
+
+../grub-2.06-i386/grub-install --target=i386-pc --directory=../grub-2.06-i386/grub-core --root-directory=/mnt/drive --modules="normal part_msdos part_gpt multiboot" --no-floppy /dev/loop30 
+
+#grub-mkconfig -o /grubimg/linux/boot/grub/grub.cfg 
+
+ls -la /grubimg/boot
+ls -la /grubimg/linux 
+
+umount /mnt/efi 
+umount /mnt/drive
+losetup -d /dev/loop30
