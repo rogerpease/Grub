@@ -1,0 +1,54 @@
+#!/usr/bin/do_not_run_without_reading_this
+#
+# Run me first. 
+#
+
+if [ "$USER" != "root" ]; then
+   echo "Run as root AND BE VERY CAREFUL."
+   echo "READ THIS SCRIPT BEFORE RUNNING IT! YOU MAY WANT TO RUN COMMANDS ONE AT A TIME."
+   exit 1
+fi
+
+
+dd if=/dev/zero of=make386disk.img bs=1M count=512 # Creates a 512MB image file
+
+#
+# Set up 2 partitions. Don't actually mount the first one. 
+# Grub will plant stuff in it. 
+# 
+
+sudo sgdisk -n 1:2048:+1M   -t 1:ef02 make386disk.img 
+sudo sgdisk -n 2:0:0        -t 2:8300 make386disk.img  
+
+losetup -P /dev/loop30 make386disk.img
+
+mkdosfs /dev/loop30p2
+
+mkdir /mnt/drive
+
+mount /dev/loop30p2 /mnt/drive
+
+# grub 2.06 was built with 
+#  a wget of grub followed by 
+#    make clean      
+#    ./configure --target=i386 --with-platform=pc --disable-werror 
+#    make 
+# 
+# Do not bother doing make install. Make install assumes you will be installing into a system you intend to 
+# run from. 
+#
+
+../grub-2.06-i386/grub-install --target=i386-pc --directory=../grub-2.06-i386/grub-core --root-directory=/mnt/drive --modules="normal part_msdos part_gpt multiboot" --no-floppy /dev/loop30 
+
+#grub-mkconfig -o /grubimg/linux/boot/grub/grub.cfg 
+
+
+umount /mnt/drive
+losetup -d /dev/loop30
+chmod 777 make386disk.img 
+
+#
+# As a sanity check I usually run "xxd make386disk.img | more". You should see Grub entries in the first screenful.  
+#  If it's all 0's grub probably didn't run properly. 
+#
+
