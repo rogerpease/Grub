@@ -1,0 +1,101 @@
+#! Please use this only for informational purposes. 
+
+
+# What my "home" disk looks like:
+#Number  Start (sector)    End (sector)  Size       Code  Name
+#   1            2048         1050623   512.0 MiB   EF00  EFI System Partition
+#   2         1050624      2000408575   953.4 GiB   8300  
+#/dev/sda2 on / type ext4 (rw,relatime,errors=remount-ro)
+#/dev/sda2 on /var/snap/firefox/common/host-hunspell type ext4 (ro,noexec,noatime,errors=remount-ro)
+#/dev/sda1 on /boot/efi type vfat (rw,relatime,fmask=0077,dmask=0077,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro)
+
+
+if [ "$USER" != "root" ]; then 
+   echo "DANGER- PLEASE USE THIS ONLY INFORMATIONALLY!!!!!"
+   echo "At the very least read it carefully and check the mount points and loop devices" 
+   exit 1 
+fi 
+
+#
+# Use -static so all the libraries are present so we don't need to copy them over. 
+#
+gcc -static init.c -o init 
+
+# Clean up anything we left behind. 
+losetup -d /dev/loop30
+umount /mnt/efi 
+umount /mnt/drive
+rm x8664disk.img 
+
+# Create a 512 GB disk and make it globally readable. 
+dd if=/dev/zero of=x8664disk.img bs=1M count=512 # Creates a 512MB image file
+chmod 777 x8664disk.img 
+
+# Need a large EFI partition for our efi executable then the rest of the space for our filesystem. 
+sudo sgdisk -n 1:2048:250M   -t 1:ef00 x8664disk.img 
+sudo sgdisk -n 2:0:+250M     -t 2:8300 x8664disk.img  
+
+losetup -P /dev/loop30 x8664disk.img
+
+mkdosfs -F 32 /dev/loop30p1 
+mkfs.ext4     /dev/loop30p2
+
+mount /dev/loop30p1 /mnt/efi
+mount /dev/loop30p2 /mnt/drive
+
+sudo mkdir -p /mnt/drive/boot
+#
+# These are the bare minimum files we need to get a linux boot. 
+# 
+sudo scp /boot/vmlinuz    /mnt/drive/boot/
+sudo scp /boot/initrd.img /mnt/drive/boot/
+
+# Target is that we're building an x8664 image using efi. 
+# EFI directory is where we will write those executables. 
+# /mnt/drive 
+
+../grub-2.06-efi/grub-install --target=x86_64-efi --efi-directory /mnt/efi --bootloader-id=GRUB --modules="normal part_msdos part_gpt multiboot" --root-directory=/mnt/drive --no-floppy /dev/loop30
+
+#
+# Tell grub our loading parameters and where to find /boot (in this case second partition of /dev/sda). 
+#
+cat >/mnt/drive/boot/grub/grub.cfg <<EOF 
+set default=0
+set timeout=2
+
+menuentry 'myos' --class os {
+
+   insmod gzio
+   insmod all_video
+   echo "Allow about 45 seconds for Hello Roger to appear" 
+   set root=(hd0,gpt2)
+   linux /boot/vmlinuz root=/dev/sda2 ro nomodeset
+   initrd /boot/initrd.img
+
+}
+EOF
+
+#
+#  Grub writes a grubx64.efi while qemu looks for a BOOTX64.EFI. Just move it. 
+#
+
+mv /mnt/efi/EFI/grub /mnt/efi/EFI/BOOT 
+mv /mnt/efi/EFI/BOOT/grubx64.efi /mnt/efi/EFI/BOOT/BOOTX64.EFI 
+
+# Kernel's default init is /sbin/init. 
+mkdir -p /mnt/drive/sbin 
+cp init /mnt/drive/sbin
+
+# Kernel will crash and burn before running init if it can't find these. 
+
+mkdir -p /mnt/drive/dev
+mkdir -p /mnt/drive/proc
+ls -la /mnt/efi /mnt/drive 
+
+# Make sure the drives update the actual img file we will read. 
+sync 
+
+# You can uncomment these to debug 
+umount /mnt/efi 
+umount /mnt/drive
+losetup -d /dev/loop30
